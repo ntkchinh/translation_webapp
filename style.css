@@ -1,0 +1,48 @@
+body {
+    color: #000000;
+    height: justify;
+    width: justify;
+    text-align: justify;
+    /* background-color: #4F8BF9; */
+}
+
+.stButton>button {
+    color: #000000;
+    /* #2E8B57; */
+    border-radius: 10%;
+    height: 3em;
+    width: 3em;
+}
+
+.stTextInput>div>div>input {
+    color: #000000;
+    height: justify;
+    width: justify;
+    text-align: justify;
+    /* #708090; */
+}
+.stTextArea>div>div>text {
+    color: #000000;
+    height: justify;
+    width: justify;
+    text-align: justify;
+    /* height: justify; */
+    /* width: 50em; */
+    /* #708090; */
+}
+/* .stTittle>div>div>title {
+    color: #2E8B57;
+} */
+
+.stTitle>title {
+    /* background-color: #F1F1F1; */
+    text-align: center;
+    padding: 50px;
+    color: #2E8B57;
+  }
+
+#textbox {
+    width: 100vw;
+    height: 10vh;
+}
+
