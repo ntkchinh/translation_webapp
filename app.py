@@ -1,13 +1,24 @@
 import streamlit as st
+import spacy
+from spacy import displacy
+import streamlit.components.v1 as components
+import SessionState
+import time
+
 import os
 import text_encoder
 import six
 import tensorflow as tf
 import base64
 import numpy as np
+import copy
+import re
+from PIL import Image
 
 import googleapiclient.discovery
 from google.api_core.client_options import ClientOptions
+
+from google.cloud import firestore
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-8be1f340424d.json" # change for your GCP key
@@ -17,11 +28,6 @@ MODEL = "translation_appendtag_envi_base_1000k"
 ENVI_VERSION = 'envi_beam2_base1m'
 
 vocab_file = 'vocab.subwords'
-
-encoder = text_encoder.SubwordTextEncoder(vocab_file)
-
-with open(vocab_file, 'r') as f:
-    vocab = f.read().split('\n')
 
 
 def to_example(dictionary):
@@ -182,26 +188,10 @@ def local_css(file_name):
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
 
-def remote_css(url):
-    st.markdown(f'<link href="{url}" rel="stylesheet">', unsafe_allow_html=True)    
-
-
-def icon(icon_name):
-    st.markdown(f'<i class="material-icons">{icon_name}</i>', unsafe_allow_html=True)
-
-
-def write_ui():
-  from_txt = st.text_input('Enter text to translate and hit Enter',
-                            value=prompt,
-                            max_chars=600)
-  if not from_txt:
-      return
-
-    # from_txt = normalize(from_txt)
-
+@st.cache
+def translate(from_txt):
   from_txt = from_txt.strip()
-
-  input_ids = encoder.encode(from_txt) + [1]
+  input_ids = state.encoder.encode(from_txt) + [1]
   input_ids += [0] * (128 - len(input_ids))
   length = len(input_ids)
   byte_string = to_example({
@@ -216,7 +206,7 @@ def write_ui():
   } 
 
 
-  request = model.predict(name=model_path, body=input_data_json)
+  request = state.model.predict(name=state.model_path, body=input_data_json)
   response = request.execute()
   
   if "error" in response:
@@ -224,7 +214,7 @@ def write_ui():
 
   translated_text = ''
   for idx in response['predictions'][0]['outputs']:
-      translated_text += vocab[idx][1:-1]
+      translated_text += state.vocab[idx][1:-1]
       
   to_text = translated_text.replace('_', ' ')
   to_text = to_text.replace('<EOS>', '').replace('<pad>', '')
@@ -234,46 +224,167 @@ def write_ui():
   to_text = to_text.replace(' , ', ', ')
   to_text = to_text.replace(' . ', ". ")
   to_text = to_text.split('\\')[0].strip()
-  
-  output_text = st.text_area('Translated text',
-                              height=100,
-                              value=to_text)
+  to_text = re.sub('\s+', ' ', to_text)
+  return to_text
 
+
+def write_ui():
+  state.from_txt = st.text_area('Enter text to translate and click "Translate" ',
+                            value=state.prompt,
+                            height=100,
+                            max_chars=600)
+  
+  button_value = st.button('Translate')
+  state.ph0 = st.empty()
+
+  if state.first_time :
+    state.text_to_show = ''
+  else:
+    state.text_to_show = translate(state.from_txt)
+
+  state.first_time = False
+  
+  state.user_edit = state.ph0.text_area(
+                    'Translated text',
+                    height=100,
+                    value=state.text_to_show)
+
+  if button_value or state.like:
+    state.like = True
+  
+  different = normalize(state.user_edit) != normalize(state.text_to_show)
+  
+  state.col1, state.col2, state.col3, state.col4 = st.beta_columns([0.9, 0.25, 0.25, 3.0])
+  with state.col2:
+    state.ph2 = st.empty()
+
+  if state.like:
+    with state.col2:
+      state.ph2 = st.empty()
+      state.b2 = state.ph2.button('Yes')  
+    with state.col3:
+      state.ph3 = st.empty()
+      state.b3 = state.ph3.button('No')   
+    with state.col1:
+      state.ph1 = st.markdown('Is this translation good ?')
+  
+    if state.b2:
+      state.like = False
+      state.ph1.empty()
+      state.ph2.empty()
+      state.ph3.empty()
+      st.success('Thank you :)')
+      state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
+        
+      if state.direction_choice == "English to Vietnamese":
+        state.db.collection(u"envi").add({
+            u'from_text': state.from_txt,
+            u'model_output': state.text_to_show,
+            u'user_approve': True,
+            u'time': time.time()
+        })
+      else:
+        state.db.collection(u"vien").add({
+            u'from_text': state.from_txt,
+            u'model_output': state.text_to_show,
+            u'user_approve': True,
+            u'time': time.time()
+        })
+
+    elif state.b3:
+      state.like = False
+      state.ph1.empty()
+      state.ph2.empty()
+      state.ph3.empty()
+      state.submit = True
+  
+  if state.submit:
+    state.ph1.write('Make edit up here ⤴ and')
+
+    if state.ph2.button('Submit'):
+      if different:
+         
+        state.ph2.empty()
+        state.ph1.empty()
+        state.ph3.empty()
+        
+        state.submit = False
+        # Save Users contribution:
+        state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
+        
+        if state.direction_choice == "English to Vietnamese":
+          state.db.collection(u"envi").add({
+              u'from_text': state.from_txt,
+              u'model_output': state.text_to_show,
+              u'user_translation': state.user_edit,
+              u'time': time.time()
+          })
+        else:
+          state.db.collection(u"vien").add({
+              u'from_text': state.from_txt,
+              u'model_output': state.text_to_show,
+              u'user_translation': state.user_edit,
+              u'time': time.time()
+          })
+        st.success("Your suggestion was recorded. Thank you :)")
+        
+        state.user_edit = state.ph0.text_area(
+                    'Translated text',
+                    height=100,
+                    value=state.user_edit,
+                    key=2)
+  
 
 st.set_page_config(
   page_title="Better translation for Vietnamese",
   layout='wide'
-  )
-#Sidebar
-st.sidebar.image(
-    "https://scontent.fsgn5-2.fna.fbcdn.net/v/t1.0-9/32905904_1247220778713646_5827247976073920512_o.png?_nc_cat=107&ccb=1-3&_nc_sid=85a577&efg=eyJpIjoidCJ9&_nc_ohc=ih_cV9hPIKIAX_Ew-Dd&tn=PRgOJlZwt8lThJU8&_nc_ht=scontent.fsgn5-2.fna&oh=b5d4c9d9769d3cd20c1414e2828bf3e6&oe=60884A55",
-    width=250, height=150,
 )
+
+#Sidebar
+st.sidebar.markdown('''
+    <a href="https://vietai.org/" target="_blank" rel="noopener noreferrer">
+        <img height="300" src="https://scontent.fsgn5-2.fna.fbcdn.net/v/t1.0-9/32905904_1247220778713646_5827247976073920512_o.png?_nc_cat=107&ccb=1-3&_nc_sid=85a577&efg=eyJpIjoidCJ9&_nc_ohc=ih_cV9hPIKIAX_Ew-Dd&tn=PRgOJlZwt8lThJU8&_nc_ht=scontent.fsgn5-2.fna&oh=b5d4c9d9769d3cd20c1414e2828bf3e6&oe=60884A55" />
+    </a>''',
+    unsafe_allow_html=True
+)
+st.sidebar.subheader("""Better translation for Vietnamese""")
+st.sidebar.markdown("Authors: [Chinh Ngo](http://github.com/ntkchinh/) and [Trieu Trinh](http://github.com/thtrieu/).")
+st.sidebar.markdown('Read more about this work [here](https://ntkchinh.github.io).')
+
+# HtmlFile = open("test.html", 'r', encoding='utf-8')
+# source_code = HtmlFile.read() 
+# # # print(source_code)
+# components.html(source_code, width=0, height=0)
+
 
 #Main body
 local_css("style.css")
-st.title("""
-Better translation for Vietnamese
-Read more about our work [here](https://ntkchinh.github.io).
-""")
 
 directions = ['English to Vietnamese',
               'Vietnamese to English']
 
-direction_choice = st.selectbox('Direction', directions)
+state = SessionState.get(like=False, submit=False, first_time=True, re_translate = False)
 
-if direction_choice == "English to Vietnamese":
-    model, model_path = get_resource('envi_beam2_base1m')
-    prompt = 'Welcome to the best ever translation project for Vietnamese !'
-else:
-    model, model_path = get_resource('vien_beam2_base1m')
-    prompt = 'Chào mừng đến với dự án dịch tiếng Việt tốt nhất  !'
+state.direction_choice = st.selectbox('Direction', directions)
 
 
+@st.cache(allow_output_mutation=True)
+def init(direction_choice):
+  # print('rerunning {}'.format(state.direction_choice))
+  if state.direction_choice == "English to Vietnamese":
+    return (get_resource('envi_beam2_base1m'), 
+            'Welcome to the best ever translation project for Vietnamese !')
+  else:
+    return (get_resource('vien_beam2_base1m'), 
+            'Chào mừng bạn đến với dự án dịch tiếng Việt tốt nhất !')
+
+
+state.encoder = text_encoder.SubwordTextEncoder(vocab_file)
+
+with open(vocab_file, 'r') as f:
+    state.vocab = f.read().split('\n')
+
+(state.model, state.model_path), state.prompt = init(state.direction_choice)
 write_ui()
-
-
-
-
 
 
