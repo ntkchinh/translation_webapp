@@ -25,7 +25,7 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-8be1f340424d.jso
 PROJECT = "vietai-research" # change for your GCP project
 REGION = "asia-southeast1" # change for your GCP region (where your model is hosted)
 MODEL = "translation_appendtag_envi_base_1000k"
-ENVI_VERSION = 'envi_beam2_base1m'
+ENVI_VERSION = 'envi_pure_tall9'
 
 vocab_file = 'vocab.subwords'
 
@@ -100,7 +100,6 @@ def check_ABB_end(content, i):
   l = content[i-1]
   return l.isupper()
 
-
 def normalize(contents):
   # first step: replace special characters 
   check_list = ['\uFE16', '\uFE15', '\u0027','\u2018', '\u2019',
@@ -132,7 +131,7 @@ def normalize(contents):
 
   # second: add spaces
   check_sp_list = [',', '?', '!', '&apos;', '&amp;', '&quot;', '&#91;', 
-                   '&#93;', '-', '/', '%', ':', '$', '#', '&', '*', ';', '=', '+', '$', '#', '@', '~', '>', '<']
+                   '&#93;', '-', '/', '%', ':', '$', '#', '&', '*', ';', '=', '+', '@', '~', '>', '<']
 
   new_contents = ''
   i = 0
@@ -157,7 +156,7 @@ def normalize(contents):
   for i, char in enumerate(contents):
     if char != '.':
       new_contents += char
-      continue
+      continue    
     elif check_mrs(contents, i):
       # case 1: Mr. Mrs. Ms.
       new_contents += '. '
@@ -215,16 +214,20 @@ def translate(from_txt):
   translated_text = ''
   for idx in response['predictions'][0]['outputs']:
       translated_text += state.vocab[idx][1:-1]
-      
+    
   to_text = translated_text.replace('_', ' ')
+  to_text = re.sub('\s+', ' ', to_text)
+
   to_text = to_text.replace('<EOS>', '').replace('<pad>', '')
   to_text = to_text.replace('& quot ;', '"')
-  to_text = to_text.replace('& quot ;', '"')
   to_text = to_text.replace(' & apos ;', "'")
+  to_text = to_text.replace('&# 91 ; ', "(")
+  to_text = to_text.replace(' &# 93 ;', ")")
   to_text = to_text.replace(' , ', ', ')
   to_text = to_text.replace(' . ', ". ")
   to_text = to_text.split('\\')[0].strip()
-  to_text = re.sub('\s+', ' ', to_text)
+
+
   return to_text
 
 
@@ -240,7 +243,9 @@ def write_ui():
   if state.first_time :
     state.text_to_show = ''
   else:
-    state.text_to_show = translate(state.from_txt)
+    state.text_to_show = translate(normalize(state.from_txt))
+  
+  if 'https' in from_text:
 
   state.first_time = False
   
@@ -340,22 +345,35 @@ st.set_page_config(
   layout='wide'
 )
 
-#Sidebar
-st.sidebar.markdown('''
-    <a href="https://vietai.org/" target="_blank" rel="noopener noreferrer">
-        <img height="300" src="https://scontent.fsgn5-2.fna.fbcdn.net/v/t1.0-9/32905904_1247220778713646_5827247976073920512_o.png?_nc_cat=107&ccb=1-3&_nc_sid=85a577&efg=eyJpIjoidCJ9&_nc_ohc=ih_cV9hPIKIAX_Ew-Dd&tn=PRgOJlZwt8lThJU8&_nc_ht=scontent.fsgn5-2.fna&oh=b5d4c9d9769d3cd20c1414e2828bf3e6&oe=60884A55" />
-    </a>''',
-    unsafe_allow_html=True
+#Sidebar 
+  #resize the sidebar
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
+        width: 450px;
+    }
+    
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
-st.sidebar.subheader("""Better translation for Vietnamese""")
+
+
+# file_ = open("cut_web_logo.png", "rb")
+file_ = open("Translation-image-02.png", "rb")
+contents = file_.read()
+data_url = base64.b64encode(contents).decode("utf-8")
+file_.close()
+
+st.sidebar.markdown(
+    f'<img height=300 margin-left:0 src="data:image/png;base64,{data_url}" >',
+    unsafe_allow_html=True,
+)
+
+st.sidebar.title("""Better translation for Vietnamese""")
 st.sidebar.markdown("Authors: [Chinh Ngo](http://github.com/ntkchinh/) and [Trieu Trinh](http://github.com/thtrieu/).")
 st.sidebar.markdown('Read more about this work [here](https://ntkchinh.github.io).')
-
-# HtmlFile = open("test.html", 'r', encoding='utf-8')
-# source_code = HtmlFile.read() 
-# # # print(source_code)
-# components.html(source_code, width=0, height=0)
-
 
 #Main body
 local_css("style.css")
@@ -370,12 +388,13 @@ state.direction_choice = st.selectbox('Direction', directions)
 
 @st.cache(allow_output_mutation=True)
 def init(direction_choice):
-  # print('rerunning {}'.format(state.direction_choice))
+
+  # print('rerunning {} by model {}'.format(state.direction_choice, ENVI_VERSION))
   if state.direction_choice == "English to Vietnamese":
-    return (get_resource('envi_beam2_base1m'), 
+    return (get_resource('envi_pure_tall9'), 
             'Welcome to the best ever translation project for Vietnamese !')
   else:
-    return (get_resource('vien_beam2_base1m'), 
+    return (get_resource('vien_pure_tall9'), 
             'Chào mừng bạn đến với dự án dịch tiếng Việt tốt nhất !')
 
 
