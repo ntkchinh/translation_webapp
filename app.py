@@ -3,7 +3,7 @@ import spacy
 from spacy import displacy
 import streamlit.components.v1 as components
 import SessionState
-import time
+import time 
 
 import os
 import text_encoder
