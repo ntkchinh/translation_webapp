@@ -1,6 +1,6 @@
 import streamlit as st
-import spacy
-from spacy import displacy
+# import spacy
+# from spacy import displacy
 import streamlit.components.v1 as components
 import SessionState
 import time 
@@ -21,7 +21,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import firestore
 
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-8be1f340424d.json" # change for your GCP key
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-addcd9ab0c21.json" # change for your GCP key
 PROJECT = "vietai-research" # change for your GCP project
 REGION = "asia-southeast1" # change for your GCP region (where your model is hosted)
 MODEL = "translation_appendtag_envi_base_1000k"
@@ -188,11 +188,13 @@ def local_css(file_name):
 
 
 @st.cache
-def translate(from_txt):
+def translate(from_txt, direction):
+  # we need the argument direction here
+  # so that translate(...) will not cache input
+  # from envi to vien and vice versa.
   from_txt = from_txt.strip()
   input_ids = state.encoder.encode(from_txt) + [1]
   input_ids += [0] * (128 - len(input_ids))
-  length = len(input_ids)
   byte_string = to_example({
       'inputs': list(np.array(input_ids, dtype=np.int32))
   })
@@ -203,7 +205,6 @@ def translate(from_txt):
       "signature_name": "serving_default",
       "instances": [{"b64": content}]
   } 
-
 
   request = state.model.predict(name=state.model_path, body=input_data_json)
   response = request.execute()
@@ -225,10 +226,42 @@ def translate(from_txt):
   to_text = to_text.replace(' &# 93 ;', ")")
   to_text = to_text.replace(' , ', ', ')
   to_text = to_text.replace(' . ', ". ")
+  to_text = to_text.replace(' : ', ": ")
   to_text = to_text.split('\\')[0].strip()
 
-
   return to_text
+
+
+def join_each_https(from_to):
+  ref, translate = from_to
+  split_at = './#?!=-_: '
+  
+  while translate:
+    idx = min([translate.index(c) if c in translate else 1000 
+               for c in split_at])
+    t = translate[:idx]
+    if t == '':
+      pass
+    elif t not in ref:
+      break
+    translate = translate[idx+1:]
+  
+  return ref + ' ' + translate
+
+
+def join_multiple_https(from_txt, to_txt):
+  from_txt = from_txt.split(' ')
+  ref_https = [t for t in from_txt if t.startswith('https://')]
+  
+  to_txt = to_txt.split('https: / /')
+  translate_https = to_txt[1:]
+  if len(ref_https) < len(translate_https):
+    ref_https += [''] * (len(translate_https) - len(ref_https))
+  else:
+    ref_https = ref_https[:len(translate_https)]
+  
+  translate_https = map(join_each_https, zip(ref_https, translate_https))
+  return ''.join(to_txt[:1] + list(translate_https))
 
 
 def write_ui():
@@ -243,9 +276,13 @@ def write_ui():
   if state.first_time :
     state.text_to_show = ''
   else:
-    state.text_to_show = translate(normalize(state.from_txt))
+    state.text_to_show = translate(
+        normalize(state.from_txt), state.direction_choice)
   
-  if 'https' in from_text:
+  state.text_to_show = join_multiple_https(
+      state.from_txt,
+      state.text_to_show
+  )
 
   state.first_time = False
   
@@ -279,7 +316,7 @@ def write_ui():
       state.ph2.empty()
       state.ph3.empty()
       st.success('Thank you :)')
-      state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
+      state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
         
       if state.direction_choice == "English to Vietnamese":
         state.db.collection(u"envi").add({
@@ -315,7 +352,7 @@ def write_ui():
         
         state.submit = False
         # Save Users contribution:
-        state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
+        state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
         
         if state.direction_choice == "English to Vietnamese":
           state.db.collection(u"envi").add({
