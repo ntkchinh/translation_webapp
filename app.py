@@ -21,7 +21,9 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import firestore
 
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-addcd9ab0c21.json" # change for your GCP key
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-addcd9ab0c21.json" # change for your GCP key
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "vietai-research-8be1f340424d.json" # change for your GCP key
+
 PROJECT = "vietai-research" # change for your GCP project
 REGION = "asia-southeast1" # change for your GCP region (where your model is hosted)
 MODEL = "translation_appendtag_envi_base_1000k"
@@ -99,6 +101,7 @@ def check_ABB_end(content, i):
     return False
   l = content[i-1]
   return l.isupper()
+
 
 def normalize(contents):
   # first step: replace special characters 
@@ -276,8 +279,10 @@ def write_ui():
   if state.first_time :
     state.text_to_show = ''
   else:
+    state.from_txt = state.from_txt.replace('\n', ' ')
+    normalized = normalize(state.from_txt)
     state.text_to_show = translate(
-        normalize(state.from_txt), state.direction_choice)
+        normalized, state.direction_choice)
   
   state.text_to_show = join_multiple_https(
       state.from_txt,
@@ -316,7 +321,8 @@ def write_ui():
       state.ph2.empty()
       state.ph3.empty()
       st.success('Thank you :)')
-      state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
+      # state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
+      state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
         
       if state.direction_choice == "English to Vietnamese":
         state.db.collection(u"envi").add({
@@ -352,7 +358,8 @@ def write_ui():
         
         state.submit = False
         # Save Users contribution:
-        state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
+        # state.db = firestore.Client.from_service_account_json("vietai-research-cb4a7971d428.json")
+        state.db = firestore.Client.from_service_account_json("vietai-research-firebase-adminsdk.json")
         
         if state.direction_choice == "English to Vietnamese":
           state.db.collection(u"envi").add({
@@ -388,7 +395,7 @@ st.markdown(
     """
     <style>
     [data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
-        width: 450px;
+        width: 340px;
     }
     
     </style>
@@ -397,20 +404,23 @@ st.markdown(
 )
 
 
-# file_ = open("cut_web_logo.png", "rb")
-file_ = open("Translation-image-02.png", "rb")
+file_ = open("cut_web_logo.png", "rb")
+# file_ = open("Translation-image-02.png", "rb")
+# i = Image.open(file_)
+# i.thumbnail((150, 150), Image.LANCZOS)
+# data_url = base64.b64encode(i).decode("utf-8")
 contents = file_.read()
 data_url = base64.b64encode(contents).decode("utf-8")
 file_.close()
 
 st.sidebar.markdown(
-    f'<img height=300 margin-left:0 src="data:image/png;base64,{data_url}" >',
+    f'<div><img height=250 margin-left:0 src="data:image/png;base64,{data_url}",alt="Better Translation for Vietnamese" ></div>',
     unsafe_allow_html=True,
 )
 
-st.sidebar.title("""Better translation for Vietnamese""")
+st.sidebar.subheader("""Better translation for Vietnamese""")
 st.sidebar.markdown("Authors: [Chinh Ngo](http://github.com/ntkchinh/) and [Trieu Trinh](http://github.com/thtrieu/).")
-st.sidebar.markdown('Read more about this work [here](https://ntkchinh.github.io).')
+st.sidebar.markdown('Read more about this work [here](https://blog.vietai.org/sat/).')
 
 #Main body
 local_css("style.css")
@@ -418,7 +428,7 @@ local_css("style.css")
 directions = ['English to Vietnamese',
               'Vietnamese to English']
 
-state = SessionState.get(like=False, submit=False, first_time=True, re_translate = False)
+state = SessionState.get(like=False, submit=False, first_time=True, prev_choice=None)
 
 state.direction_choice = st.selectbox('Direction', directions)
 
@@ -441,6 +451,14 @@ with open(vocab_file, 'r') as f:
     state.vocab = f.read().split('\n')
 
 (state.model, state.model_path), state.prompt = init(state.direction_choice)
+
+if state.direction_choice != state.prev_choice and state.prev_choice != None:
+  state.like = False
+  state.submit = False
+  state.first_time = True
+
+state.prev_choice = state.direction_choice
+
 write_ui()
 
 
